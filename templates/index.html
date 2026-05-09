@@ -258,8 +258,32 @@
 
   window.onload = () => {
     document.querySelectorAll('.katex-render').forEach(el => {
-      katex.render(el.dataset.latex, el, { displayMode: true, throwOnError: false });
+      let rawText = el.dataset.latex;
+      
+      // 生の記号をKaTeXコマンドに置換する処理
+      let latexText = rawText
+        .replace(/∫/g, '\\int ')
+        .replace(/Σ/g, '\\sum ')
+        .replace(/∂/g, '\\partial ')
+        .replace(/∞/g, '\\infty ')
+        .replace(/π/g, '\\pi ')
+        .replace(/α/g, '\\alpha ')
+        .replace(/β/g, '\\beta ')
+        .replace(/θ/g, '\\theta ')
+        .replace(/÷/g, '\\div ')
+        .replace(/×/g, '\\times ');
+
+      try {
+        katex.render(latexText, el, { 
+          displayMode: true, 
+          throwOnError: false 
+        });
+      } catch (e) {
+        console.error(e);
+        el.innerText = rawText;
+      }
     });
+    
     document.querySelectorAll('.debug-img').forEach(img => {
       if (img.complete) updateBoxes(); else img.onload = updateBoxes;
     });
