@@ -9,13 +9,15 @@ import numpy as np
 import torchvision.transforms as transforms
 
 SYMBOL_MAP = {
-    'alpha':'α', 'beta':'β', 'cong':'≅', 'divide':'÷', 'equal':'=', 
-    'geq':'≥', 'greater':'>', 'infty':'∞', 'leq':'≤', 
-    'less':'<', 'minus':'-', 'pi':'π', 'plus':'+', 
-    'times':'×', 'var_a':'a', 'var_b':'b', 
-    'var_c':'c', 'var_x':'x', 'var_y':'y', 'var_z':'z'
+    'alpha':'\\alpha', 'beta':'\\beta', 'round_d':'\\partial', 'divide':'\\div', 'equal':'=', 
+    'greater':'>', 'infty':'\\infty', 
+    'less':'<', 'minus':'-', 'pi':'\\pi', 'plus':'+', 'times':'\\times',
+    'sigma':'\\sum', 'theata':'\\theta', 'integral':'\\int',
+    'var_n':'n', 'var_a':'a', 'var_b':'b', 'var_c':'c', 'var_d':'d',
+    'var_s':'s', 'var_x':'x', 'var_y':'y', 'var_z':'z', 'var_e':'e'
 }
-OP_CHARS = ['≅', '÷', '=', '≥', '>', '≤', '<', '-', '+', '×']
+
+OP_CHARS = ['\\div', '=', '>', '<', '-', '+', '\\times', '\\sum', '\\int']
 
 class MathFormulaCNN(nn.Module):
     def __init__(self, num_classes):
@@ -49,26 +51,16 @@ model.to(device).eval()
 
 def resize_with_padding_white(img, size=(48, 48)):
     h, w = img.shape
-    if h <= 0 or w <= 0: 
-        return np.full(size, 255, dtype=np.uint8)
+    if h <= 0 or w <= 0: return np.full(size, 255, dtype=np.uint8)
     margin = 12
     target_w, target_h = size[0] - margin, size[1] - margin
-    
     scale = min(target_w / w, target_h / h)
-    
     new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
-    
     resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    
     canvas = np.full(size, 255, dtype=np.uint8)
-    
-    top = (size[1] - new_h) // 2
-    left = (size[0] - new_w) // 2
-    
+    top, left = (size[1] - new_h) // 2, (size[0] - new_w) // 2
     canvas[top:top+new_h, left:left+new_w] = resized
-    
     return canvas
-
 
 def merge_boxes(bboxes, threshold_dist=15):
     if not bboxes: return []
@@ -87,24 +79,16 @@ def merge_boxes(bboxes, threshold_dist=15):
                 is_vertical = overlap_x > min(curr[2], next_box[2]) * 0.5
                 v_limit = 25 if is_vertical else threshold_dist
                 if dist_x < 4 and dist_y < v_limit:
-                    if not is_vertical and dist_y > 10: 
-                        continue 
-
-                    nx = min(curr[0], next_box[0])
-                    ny = min(curr[1], next_box[1])
+                    nx, ny = min(curr[0], next_box[0]), min(curr[1], next_box[1])
                     nw = max(curr[0]+curr[2], next_box[0]+next_box[2]) - nx
                     nh = max(curr[1]+curr[3], next_box[1]+next_box[3]) - ny
                     curr = [nx, ny, nw, nh]
-                    bboxes.pop(i)
-                    found_merge = True
-                    break
+                    bboxes.pop(i); found_merge = True; break
         merged.append(tuple(curr))
     return merged
 
 def predict_formula_from_roi(img_cv):
-    if len(img_cv.shape) == 3: 
-        img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    
+    if len(img_cv.shape) == 3: img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
     _, thresh_temp = cv2.threshold(img_cv, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     coords = np.column_stack(np.where(thresh_temp > 0))
     if len(coords) > 0:
@@ -112,16 +96,14 @@ def predict_formula_from_roi(img_cv):
         angle = -(90 + angle) if angle < -45 else (90 - angle if angle > 45 else -angle)
         M = cv2.getRotationMatrix2D((img_cv.shape[1]//2, img_cv.shape[0]//2), angle, 1.0)
         img_cv = cv2.warpAffine(img_cv, M, (img_cv.shape[1], img_cv.shape[0]), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=255)
-
+    
     blurred = cv2.GaussianBlur(img_cv, (3, 3), 0)
     thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 45, 30)
-    
     cnt_img = cv2.bitwise_not(thresh)
     contours, _ = cv2.findContours(cnt_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     initial_bboxes = [cv2.boundingRect(c) for c in contours if cv2.contourArea(c) > 10]
     temp_bboxes = merge_boxes(initial_bboxes, threshold_dist=15)
     temp_bboxes = sorted(temp_bboxes, key=lambda x: x[0])
-
     if not temp_bboxes: return "", []
 
     avg_width = np.mean([b[2] for b in temp_bboxes])
@@ -134,22 +116,13 @@ def predict_formula_from_roi(img_cv):
             split_rel = s + np.argmin(projection[s:e])
             final_bboxes.append((x, y, split_rel, h))
             final_bboxes.append((x + split_rel, y, w - split_rel, h))
-        else:
-            final_bboxes.append((x, y, w, h))
+        else: final_bboxes.append((x, y, w, h))
 
-    res_text = []
-    details = [] 
-    prev_info = None 
-
+    raw_results = [] 
     model.eval()
-    for x, y, w, h in final_bboxes:
+    for (x, y, w, h) in final_bboxes:
         roi_in = resize_with_padding_white(thresh[y:y+h, x:x+w], size=(48, 48))
-        
-        img_t = transforms.Compose([
-            transforms.ToTensor(), 
-            transforms.Normalize((0.5,), (0.5,))
-        ])(roi_in).unsqueeze(0).to(device)
-        
+        img_t = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])(roi_in).unsqueeze(0).to(device)
         with torch.no_grad():
             out = model(img_t)
             probs = torch.nn.functional.softmax(out, dim=1)
@@ -157,24 +130,30 @@ def predict_formula_from_roi(img_cv):
             raw_symbol = class_names[pred.item()]
         
         char = SYMBOL_MAP.get(raw_symbol, raw_symbol.replace('var_',''))
-        
+        raw_results.append({'char': char, 'box': [x, y, w, h], 'conf': float(conf.item())})
+
+    for i in range(len(raw_results)):
+        if raw_results[i]['char'] == '1' and i + 1 < len(raw_results):
+            if raw_results[i]['box'][3] >= raw_results[i+1]['box'][3] * 1.3:
+                raw_results[i]['char'] = '\\int'
+
+    res_text_list = []
+    details = []
+    prev_info = None
+    for res in raw_results:
+        char = res['char']
+        x, y, w, h = res['box']
         is_super = False
         if prev_info:
             px, py, pw, ph = prev_info
-            if (y + h) < (py + ph * 0.6):
-                is_super = True
+            if (y + h) < (py + ph * 0.6): is_super = True
         
-        if is_super and res_text and res_text[-1] not in OP_CHARS:
-            display_char = "^" + char
-        else:
-            display_char = char
-            
-        res_text.append(display_char)
-        details.append({
-            'char': display_char,
-            'box': [x, y, w, h],
-            'conf': float(conf.item()) 
-        })
+        display_char = "^" + char if (is_super and res_text_list and res_text_list[-1] not in OP_CHARS) else char
+        res_text_list.append(display_char)
+        details.append({'char': display_char, 'box': [x, y, w, h], 'conf': res['conf']})
         prev_info = (x, y, w, h)
         
-    return "".join(res_text), details
+    full_text = "".join(res_text_list)
+    full_text = full_text.replace("s1n", "\\sin").replace("\\theta1n", "\\sin").replace("c0s", "\\cos").replace("+an", "\\tan")
+    
+    return full_text, details
