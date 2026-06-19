@@ -1,7 +1,7 @@
 # Handwritten Formula to LaTeX/Markdown Converter
 
 紙に書かれた手書きの計算式を画像（JPG, PNG）から読み取り、デジタルな数式データ（LaTeX/Markdown）へ瞬時に変換するWebアプリケーションです。
-YOLOv8による構造解析と、独自CNNによる記号認識を組み合わせたハイブリッドシステムを搭載しています。
+YOLOv8による構造解析と、CNNによる記号認識を組み合わせたハイブリッドシステムを搭載しています。
 
 ## 主な機能
 
