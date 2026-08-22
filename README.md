@@ -1,3 +1,4 @@
+
 # Handwritten Formula to LaTeX/Markdown Converter
 
 紙に書かれた手書きの計算式を画像（JPG, PNG）から読み取り、デジタルな数式データ（LaTeX/Markdown）へ瞬時に変換するWebアプリケーションです。
@@ -44,9 +45,12 @@ python app.py
 
 ```text
 .
-├── app.py                # Flaskアプリケーション（ルーティング・推論制御）
-├── recognition_logic.py  # CNNモデル定義・数式組み立てロジック
-├── shiki_models/         # 学習済みモデル格納用（.pt, .pth, .json）
+├── tegaki_app.py                # Flaskアプリケーション（ルーティング・推論制御）
+├── logic_system.py  # CNNモデル定義・数式組み立てロジック
+├── models/         # 学習済みモデル格納用（.pt, .pth, .json）
+|   ├── class_names.json        # 文字認識モデルのクラス名
+│   ├── math_universal_model.pth        # 文字認識用モデル
+│   └── shiki_structure_yolo_v8.pt       # 計算式検出用モデル  
 ├── templates/
 │   ├── index.html        # メインWebインターフェース
 │   └── terms.html        # 利用規約・ライセンス表示ページ
